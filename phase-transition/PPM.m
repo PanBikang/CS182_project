@@ -20,18 +20,18 @@ function [x, iter] = PPM(A, Q, opts)
        %% Parameter setting
         maxiter = opts.T; 
         tol = opts.tol; 
-        if isfield(opts,'report_interval')
+        if isfield(opts,'report_interval') %% whether "report_interval" is inside opts
             report_interval = opts.report_interval;
         else
-            report_interval = 1;  
+            report_interval = 100;  
         end
         if isfield(opts,'print')
             print = opts.print;
         else
-            print = 0;
+            print = 1;
         end
         n = size(A, 1);
-        y = Q(:,2); x = sqrt(n)*y/norm(y);        
+        y = Q(:,2); x = sqrt(n)*y/norm(y);  %% initialize       
         Ax = A*x; 
         
         for iter = 1:maxiter                               
@@ -48,11 +48,11 @@ function [x, iter] = PPM(A, Q, opts)
                        x = sqrt(n) * y/norm(y);
                 else     
                %% projected power iteration
-                       [~, inx] = sort(Ax); x = ones(n,1);
-                       inxp = inx(1:n/2); x(inxp) = -1;                       
+                       [~, inx] = sort(Ax); x = ones(n,1);  %% inx is the index of sorted Ax
+                       inxp = inx(1:n/2); x(inxp) = -1;     %% x(inxp == 0) = -1                  
                 end
                 
-                Ax = A*x;
+                Ax = A*x;   %% iterate
                 
                %% print and record information                                              
                 if mod(iter, report_interval) == 0 && print == 1            
