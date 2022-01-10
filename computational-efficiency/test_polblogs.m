@@ -2,24 +2,56 @@
 clear; clc;
 
 %% Load the Real-World Datase
-load Datasets/polblogs          %%%%%%% load real_datasets\polblogs\polblogs.louvain;
-As = Problem.A; As(As>0) = 1;   %%%%% take the adjacency matrix
-xt = Problem.aux.nodevalue;     %%%%% take the ground truth
-n1 = sum(xt==0); n2 = sum(xt==1); n = n1+n2;
-idx = n1-n2+1:n; As = As(idx, idx);
-xt = xt(n1-n2+1:n); 
-n = size(As,1); K=2; 
-xt = (xt - 0.5)*2;
-
+% load Datasets/polblogs          %%%%%%% load real_datasets\polblogs\polblogs.louvain;
+% As = Problem.A; As(As>0) = 1;   %%%%% take the adjacency matrix
+% xt = Problem.aux.nodevalue;     %%%%% take the ground truth
+% n1 = sum(xt==0); n2 = sum(xt==1); n = n1+n2;
+% idx = n1-n2+1:n; As = As(idx, idx);
+% xt = xt(n1-n2+1:n); 
+% n = size(As,1); K=2; 
+% xt = (xt - 0.5)*2;
+n = 3000;      %%% n = the number of nodes
+K = 2;        %%% K = the number of communities
+m = n/K;      %%% m = the community size
+nnt = 40;     %%% the number of repeating the trials for fixed alpha, beta
+tol = 1e-3;   %%% tolerance of success recovery
+run_PPM = 1; run_MGD = 1; run_GPM = 1; run_SDP = 1; run_SC = 1;self_loops = 0;
+%% ground truth 
+% Xt = kron(eye(K), ones(m));     %% tensor product to produce
+% Xt(Xt==0)=-1;                   %% change all 0 to -1
+%                                 %%% Xt = the true cluster matrix
+xt = [ones(m,1); -ones(m,1)];   %% first 150 first class      
+                                %%%  xt = the true cluster vector
+% randIndex = randperm(size(xt,1));
+% xt = xt(randIndex,:);
+Xt = xt .* xt';
+mu = 2;
+gamma = exp(-1.5);
+Xloc = (randn(n, 1) + mu) .* xt;
+Xdis = abs(Xloc - Xloc');
+Xprob = gamma * exp(-Xdis);
+A_rand = rand(n);
+A = zeros(n);
+for i = 1:n
+    for j = 1:n
+        if A_rand(i,j) <= Xprob(i,j)
+            A(i,j) = 1;
+        end
+    end
+end
+if self_loops == 0
+    A = A - diag(diag(A));
+end
+As = sparse(A);
 %% initial setting
 iternum1 = 10;
 [fval_PPM, fval_GPM, fval_MGD, fval_SDP] = deal(zeros(iternum1,1));
 [PPM_collector, GPM_collector, MGD_collector, SDP_collector] =  deal(zeros(n,n, iternum1));
 [ttime_PPM, ttime_GPM, ttime_MGD, ttime_SDP, ttime_SC] = deal(0);
 
-run_PPM = 1; run_MGD = 1; run_GPM = 1; run_SDP = 1; run_SC = 1;
 
-for iter = 1:iternum1
+
+parfor iter = 1:iternum1
     
         fprintf('Iter Num: %d \n', iter);        
         

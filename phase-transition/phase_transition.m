@@ -6,59 +6,84 @@ n = 300;      %%% n = the number of nodes
 K = 2;        %%% K = the number of communities
 m = n/K;      %%% m = the community size
 nnt = 40;     %%% the number of repeating the trials for fixed alpha, beta
+tol = 1e-3;   %%% tolerance of success recovery
 
 %% ground truth 
-Xt = kron(eye(K), ones(m));     %% tensor product to produce
-Xt(Xt==0)=-1;                   %% change all 0 to -1
-                                %%% Xt = the true cluster matrix
+% Xt = kron(eye(K), ones(m));     %% tensor product to produce
+% Xt(Xt==0)=-1;                   %% change all 0 to -1
+%                                 %%% Xt = the true cluster matrix
 xt = [ones(m,1); -ones(m,1)];   %% first 150 first class      
                                 %%%  xt = the true cluster vector
-
+randIndex = randperm(size(xt,1));
+xt = xt(randIndex,:);
+Xt = xt .* xt';
 %% set the ranges of alpha, beta
-arange = 0:0.5:30; brange = 0:0.4:10; 
-arange(1) = 0.01; % deal with the special case that a(1) = 0
-nna = length(arange); nnb = length(brange);
+% arange = 0:0.5:2; brange = 0:0.4:2; 
+% arange(1) = 0.01; % deal with the special case that a(1) = 0
+% nna = length(arange); nnb = length(brange);
+
+murange = 0:1:20; gammarange = exp(-5:0.25:0);
+nnmu = length(murange); nngamma = length(gammarange);
 
 %% record information
-[prob_SDP, prob_MGD, prob_SC, prob_GPM, prob_PPM]  = deal(zeros(nna,nnb));  %%% record ratio of exact recovery
+% [prob_SDP, prob_MGD, prob_SC, prob_GPM, prob_PPM]  = deal(zeros(nna,nnb));  %%% record ratio of exact recovery
+[prob_SDP, prob_MGD, prob_SC, prob_GPM, prob_PPM]  = deal(zeros(nnmu,nngamma));  %%% record ratio of exact recovery
 [ttime_PPM, ttime_MGD, ttime_SC, ttime_GPM, ttime_SDP] = deal(0);  %%% record total running time
 
 %% choose the running algorithm
-run_SDP = 1; run_MGD = 1; run_SC = 1; run_GPM = 1; run_PPM = 1;
+run_SDP = 1; run_MGD = 1; run_SC = 1; run_GPM = 1; run_PPM = 0;
 
 %% with and without self-loops
 self_loops = 0; %%% 1 = self-loops; 0 = no self-loops
 
-for iter1 = 1:nna      %%% choose alpha
+parfor iter1 = 1:nnmu      %%% choose alpha
     
-    a=arange(iter1); 
+%     a=arange(iter1); 
+    mu = murange(iter1);
     
-    for iter2 = 1:nnb  %%%  choose beta 
+    for iter2 = 1:nngamma  %%%  choose beta 
             
-        b = brange(iter2); 
-        p = a*log(n)/n; q=b*log(n)/n; %%% p: the inner connecting probability; q: the outer connecting probability;           
+%         b = brange(iter2); 
+%         p = a*log(n)/n; q=b*log(n)/n; %%% p: the inner connecting probability; q: the outer connecting probability;           
+        gamma = gammarange(iter2);
         [succ_FW, succ_SDP, succ_MGD, succ_SC, succ_GPM, succ_PPM] = deal(0);
 
-        for iter3 = 1:nnt %%% the number of repeating the trials 
-
+        for iter3 = 1:nnt %%% the number of repeating the trials
                 %% generate an adjacency matrix A by Binary SBM
-                Ans11 = rand(m); Al11 = tril(Ans11,-1);                      
-                As11 = Al11 + Al11'+diag(diag(Ans11));
-                A11 = double(As11<=p);
-
-                As12 = rand(m); A12 = double(As12<=q);
-
-                Ans22 = rand(m); Al22 = tril(Ans22,-1);                    
-                As22 = Al22 + Al22' + diag(diag(Ans22));
-                A22 = double(As22<=p);
-
-                A = ([A11,A12;A12',A22]); 
-
+%                 Ans11 = rand(m); Al11 = tril(Ans11,-1);                      
+%                 As11 = Al11 + Al11'+diag(diag(Ans11));
+%                 A11 = double(As11<=p);
+% 
+%                 As12 = rand(m); A12 = double(As12<=q);
+% 
+%                 Ans22 = rand(m); Al22 = tril(Ans22,-1);                    
+%                 As22 = Al22 + Al22' + diag(diag(Ans22));
+%                 A22 = double(As22<=p);
+% 
+%                 A = ([A11,A12;A12',A22]); 
+% 
+%                 if self_loops == 0
+%                     A = A - diag(diag(A));
+%                 end
+%                 A = sparse(A);
+                                
+                Xloc = (randn(n, 1) + mu) .* xt;
+                Xdis = abs(Xloc - Xloc');
+                Xprob = gamma * exp(-Xdis);
+                A_rand = rand(n);
+                A = zeros(n);
+                for i = 1:n
+                    for j = 1:n
+                        if A_rand(i,j) <= Xprob(i,j)
+                            A(i,j) = 1;
+                        end
+                    end
+                end
                 if self_loops == 0
                     A = A - diag(diag(A));
                 end
                 A = sparse(A);
-                                
+
                 %% choose the initial point
                 Q = randn(n,2); Q0 = Q*(Q'*Q)^(-0.5);
                 
@@ -89,7 +114,7 @@ for iter1 = 1:nna      %%% choose alpha
                 
                 %% Manifold Gradient Descent (MGD)
                 if run_MGD == 1
-                        opts = struct('rho', (p+q)/2, 'T', maxiter, 'tol', tol,'report_interval', report_interval, 'total_time', total_time);                
+                        opts = struct('rho', gamma*(exp(-1)+exp(-1-mu^2))/2, 'T', maxiter, 'tol', tol,'report_interval', report_interval, 'total_time', total_time);                
                         tic; [Q, iter_MGD] = manifold_GD(A, Q0, opts); time_MGD=toc;
                         ttime_MGD = ttime_MGD + time_MGD;
                         X_MGD = Q*Q';
@@ -140,50 +165,75 @@ end
 f =  @(x,y)  sqrt(y) - sqrt(x) - sqrt(2); 
 
 if run_PPM == 1
-    figure(); imshow(prob_PPM, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     figure(); imshow(prob_PPM, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     axis on; set(gca,'YDir','normal'); hold on; 
+%     fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
+%     daspect([1 3 1]);
+%     set(gca,'FontSize', 12, 'FontWeight','bold');
+%     xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('PPM');
+    figure(); imshow(prob_PPM, 'InitialMagnification','fit','XData',[-5 0],'YData',[0 20]); colorbar; 
     axis on; set(gca,'YDir','normal'); hold on; 
-    fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
-    daspect([1 3 1]);
+    daspect([1 4 1]);
     set(gca,'FontSize', 12, 'FontWeight','bold');
-    xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('PPM');
+    xlabel('\gamma in log scale', 'FontSize', 16); ylabel('\mu', 'FontSize', 16); title('PPM');
 end
 
 if run_GPM == 1
-    figure(); imshow(prob_GPM, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     figure(); imshow(prob_GPM, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     axis on; set(gca,'YDir','normal'); hold on; 
+%     fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
+%     daspect([1 3 1]);
+%     set(gca,'FontSize', 12, 'FontWeight','bold');
+%     xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('GPM');
+    figure(); imshow(prob_GPM, 'InitialMagnification','fit','XData',[-5 0],'YData',[0 20]); colorbar; 
     axis on; set(gca,'YDir','normal'); hold on; 
-    fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
-    daspect([1 3 1]);
+    daspect([1 4 1]);
     set(gca,'FontSize', 12, 'FontWeight','bold');
-    xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('GPM');
+    xlabel('\gamma in log scale', 'FontSize', 16); ylabel('\mu', 'FontSize', 16); title('GPM');
 end
 
 if run_SC == 1
-    figure();
-    imshow(prob_SC, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     figure();
+%     imshow(prob_SC, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     axis on; set(gca,'YDir','normal'); hold on; 
+%     fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
+%     daspect([1 3 1]);
+%     set(gca,'FontSize', 12, 'FontWeight','bold');
+%     xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('SC');
+    figure(); imshow(prob_SC, 'InitialMagnification','fit','XData',[-5 0],'YData',[0 20]); colorbar; 
     axis on; set(gca,'YDir','normal'); hold on; 
-    fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
-    daspect([1 3 1]);
+    daspect([1 4 1]);
     set(gca,'FontSize', 12, 'FontWeight','bold');
-    xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('SC');
+    xlabel('\gamma in log scale', 'FontSize', 16); ylabel('\mu', 'FontSize', 16); title('SC');
 end
 
 if run_SDP == 1
-    figure();
-    imshow(prob_SDP, 'InitialMagnification','fit', 'XData',[0 10],'YData',[0 30]); colorbar;
+%     figure();
+%     imshow(prob_SDP, 'InitialMagnification','fit', 'XData',[0 10],'YData',[0 30]); colorbar;
+%     axis on; set(gca,'YDir','normal'); hold on; 
+%     fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
+%     daspect([1 3 1]);
+%     set(gca,'FontSize', 12, 'FontWeight','bold');
+%     xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('SDP');
+    figure(); imshow(prob_SDP, 'InitialMagnification','fit','XData',[-5 0],'YData',[0 20]); colorbar; 
     axis on; set(gca,'YDir','normal'); hold on; 
-    fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r');
-    daspect([1 3 1]);
+    daspect([1 4 1]);
     set(gca,'FontSize', 12, 'FontWeight','bold');
-    xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('SDP');
+    xlabel('\gamma in log scale', 'FontSize', 16); ylabel('\mu', 'FontSize', 16); title('SDP');
 end
 
 if run_MGD == 1
-    figure(); 
-    imshow(prob_MGD, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     figure(); 
+%     imshow(prob_MGD, 'InitialMagnification','fit','XData',[0 10],'YData',[0 30]); colorbar; 
+%     axis on; set(gca,'YDir','normal'); hold on; 
+%     fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r'); daspect([1 3 1]);
+%     set(gca,'FontSize', 12, 'FontWeight','bold');
+%     xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('MGD');
+    figure(); imshow(prob_MGD, 'InitialMagnification','fit','XData',[-5 0],'YData',[0 20]); colorbar; 
     axis on; set(gca,'YDir','normal'); hold on; 
-    fimplicit(f,[0 10 0 30], 'LineWidth', 1.5, 'color', 'r'); daspect([1 3 1]);
+    daspect([1 4 1]);
     set(gca,'FontSize', 12, 'FontWeight','bold');
-    xlabel('\beta', 'FontSize', 16); ylabel('\alpha', 'FontSize', 16); title('MGD');
+    xlabel('\gamma in log scale', 'FontSize', 16); ylabel('\mu', 'FontSize', 16); title('MGD');
 end
 
 
